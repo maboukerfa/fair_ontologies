@@ -40,7 +40,7 @@ public class Check_RDF1_RDFAvailability extends Check {
     @Override
     public void check() {
         super.check();
-        if (this.ontology.getOntologyModel() != null){
+        if (this.ontology.isParsed()){
             total_passed_tests += 1;
             this.explanation = Constants.RDF1_EXPLANATION_OK;
             this.status = Constants.OK;

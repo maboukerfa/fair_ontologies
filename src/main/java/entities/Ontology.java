@@ -20,25 +20,26 @@ package entities;
 
 import fair.Constants;
 import fair.Utils;
+import fair.rdf.VocabularyScanner;
+import fair.rdf.VocabularySummary;
+import fair.rdf.VocabularySummary.SchemeOrigin;
 import org.jsoup.nodes.Document;
-import org.semanticweb.owlapi.apibinding.OWLManager;
-import org.semanticweb.owlapi.io.StreamDocumentSource;
 import org.semanticweb.owlapi.model.*;
-import org.semanticweb.owlapi.search.EntitySearcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.FileTooLargeException;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.Optional;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public class Ontology {
-    private OWLOntology ontologyModel;
+    private VocabularySummary vocabulary;
     private Document htmlDocumentation;
     private static final Logger logger = LoggerFactory.getLogger(Ontology.class);
 
@@ -70,9 +71,10 @@ public class Ontology {
     private final ArrayList<String> reusedMetadataVocabularies;
     private final ArrayList<String> reusedVocabularies;
     List<IRI> importedVocabularies;
-    private final ArrayList<String> termsWithLabel;
-    private final ArrayList<String> terms; // all terms
-    private final ArrayList<String> termsWithDescription;
+    // sets: membership is checked once per term, which is quadratic on lists for large vocabularies
+    private final Set<String> termsWithLabel;
+    private final Set<String> terms; // all terms
+    private final Set<String> termsWithDescription;
     private boolean isSKOS = false;
 
     /**
@@ -86,15 +88,13 @@ public class Ontology {
         importedVocabularies = new ArrayList<>();
         reusedMetadataVocabularies = new ArrayList<>();
         reusedVocabularies = new ArrayList<>();
-        termsWithLabel = new ArrayList<>();
-        termsWithDescription = new ArrayList<>();
-        terms = new ArrayList<>();
+        termsWithLabel = new LinkedHashSet<>();
+        termsWithDescription = new LinkedHashSet<>();
+        terms = new LinkedHashSet<>();
         //Download ontology (any serialization)
         try {
-            this.loadModelToDocument(o, isFromFile, tmpFolder.toString());
-            if (this.ontologyModel != null && this.ontologyModel.getOntologyID().getOntologyIRI().isPresent()) {
-                this.ontologyURI = this.ontologyModel.getOntologyID().getOntologyIRI().get().toString();
-            } 
+            this.vocabulary = this.loadVocabulary(o, isFromFile, tmpFolder);
+            this.ontologyURI = this.vocabulary.getOntologyIri();
             logger.info("Ontology URI to assess: "+ontologyURI);
         }catch(FileTooLargeException e) {
             throw e;
@@ -102,19 +102,15 @@ public class Ontology {
         catch(Exception e){
             logger.error("Could not load the ontology: " + e.getMessage());
         }
-        if (this.ontologyURI == null && this.ontologyModel != null) {
-                List<OWLIndividual> cs = EntitySearcher.getInstances(
-                    ontologyModel.getOWLOntologyManager().getOWLDataFactory().getOWLClass("http://www.w3.org/2004/02/skos/core#ConceptScheme"), 
-                    ontologyModel).collect(Collectors.toList());
-                
-                if (!cs.isEmpty()) {
-                    if (cs.size() > 1) {
-                        logger.warn("More than one concept scheme detected!");
-                    }
-                    this.ontologyURI = cs.get(0).toStringID();
-                    this.isSKOS = true;
-                    logger.info("SKOS ConceptScheme detected: " + ontologyURI);
-                }
+        // no ontology IRI: a concept scheme, typed or referenced through skos:inScheme, describes the vocabulary
+        if (this.ontologyURI == null && this.vocabulary != null && this.vocabulary.isSKOS()) {
+            this.ontologyURI = this.vocabulary.getConceptScheme();
+            this.isSKOS = true;
+            if (this.vocabulary.getSchemeOrigin() == SchemeOrigin.INFERRED) {
+                logger.info("SKOS ConceptScheme inferred from skos:inScheme: " + ontologyURI);
+            } else {
+                logger.info("SKOS ConceptScheme detected: " + ontologyURI);
+            }
         }
 
         if (this.ontologyURI == null || this.ontologyURI.isEmpty()) {
@@ -153,7 +149,7 @@ public class Ontology {
      */
     private void getOntologyMetadata(){
         logger.info("Retrieving ontology metadata");
-        if (this.ontologyModel == null) {
+        if (this.vocabulary == null) {
             logger.error("No ontology loaded! Metadata cannot be extracted");
             return;
         }
@@ -162,54 +158,19 @@ public class Ontology {
         this.title = "Title unavailable";
         if (isSKOS){
             logger.info("Is a SKOS vocabulary, retrieving metadata from the concept scheme");
-            // get annotations on the onto URI.
-            OWLIndividual cs = EntitySearcher.getInstances(ontologyModel.getOWLOntologyManager().getOWLDataFactory().
-                    getOWLClass(Constants.SKOS_CONCEPT_SCHEME), ontologyModel).collect(Collectors.toList()).get(0);
-            EntitySearcher.getAnnotations((OWLEntity) cs, this.getOntologyModel()).forEach(this::completeMetadata);
+            this.vocabulary.getSchemeAnnotations().forEach(this::completeMetadata);
         } else {
             logger.info("NO SKOS vocabulary");
-            try {
-                if (this.ontologyModel.getOntologyID().getVersionIRI().isPresent()) {
-                    this.versionIRI = this.ontologyModel.getOntologyID().getVersionIRI().get().toString();
-                    this.supportedMetadata.add(Constants.FOOPS_VERSION_IRI);
-                }
-            } catch (Exception e) {
-                logger.info("No version IRI detected");
+            if (this.vocabulary.getVersionIri() != null) {
+                this.versionIRI = this.vocabulary.getVersionIri();
+                this.supportedMetadata.add(Constants.FOOPS_VERSION_IRI);
             }
 
-            this.ontologyModel.annotations().forEach(this::completeMetadata);
+            this.vocabulary.getOntologyAnnotations().forEach(this::completeMetadata);
 
             // extension for those axioms that extend properties but are annotation properties.
             // see https://github.com/dgarijo/Widoco/issues/530 for context
-            logger.info("Extracting axioms");
-            for (OWLAxiom axiom : ontologyModel.getAxioms()) {
-                String subject = "", predicate ="", object ="";
-                try {
-                    if (axiom instanceof OWLDataPropertyAssertionAxiom) {
-                        OWLDataPropertyAssertionAxiom dataPropertyAssertionAxiom = (OWLDataPropertyAssertionAxiom) axiom;
-                        subject = dataPropertyAssertionAxiom.getSubject().toStringID();
-                        predicate = dataPropertyAssertionAxiom.getProperty().asOWLDataProperty().toStringID();
-                        object = dataPropertyAssertionAxiom.getObject().getLiteral();
-                    } else if (axiom instanceof OWLObjectPropertyAssertionAxiom) {
-                        OWLObjectPropertyAssertionAxiom objectPropertyAssertionAxiom = (OWLObjectPropertyAssertionAxiom) axiom;
-                        subject = objectPropertyAssertionAxiom.getSubject().toStringID();
-                        predicate = objectPropertyAssertionAxiom.getProperty().asOWLObjectProperty().toStringID();
-                        object = objectPropertyAssertionAxiom.getObject().toStringID();
-                    }
-
-                     if (subject.equals(this.ontologyURI)){
-                        OWLDataFactory dataFactory = this.ontologyModel.getOWLOntologyManager().getOWLDataFactory();
-                        OWLAnnotationProperty pAux = dataFactory.getOWLAnnotationProperty(IRI.create(predicate));
-                        OWLAnnotationValue oAux = dataFactory.getOWLLiteral(object);
-                        
-                        completeMetadata(dataFactory.getOWLAnnotation(pAux, oAux));
-                    }
-                } catch (Exception e) {
-                    logger.warn("Failed to process axiom: " + axiom.toString());
-                    continue; 
-                }
-               
-            }
+            this.vocabulary.getOntologyAssertions().forEach(this::completeMetadata);
         }
     }
 
@@ -460,7 +421,11 @@ public class Ontology {
      */
     private void getOntologyCoverage(){
         //metadata vocabularies
-        this.ontologyModel.annotations().forEach(this::checkNamespaces);
+        //skos has metadata in concepscheme not in owl:Ontology. Same as getOntologyMetadata()
+         if (isSKOS) {
+            this.vocabulary.getSchemeAnnotations().forEach(this::checkNamespaces);
+        }
+        this.vocabulary.getOntologyAnnotations().forEach(this::checkNamespaces);
         // imports -> they are loaded when the ontology is loaded.
         // due to slow imports, we have disabled loading of imports
         //this.importedVocabularies = this.ontologyModel.importsDeclarations().collect(Collectors.toList());
@@ -469,45 +434,18 @@ public class Ontology {
         logger.info("Extracting namespaces, labels, descriptions");
         if(isSKOS) {
             //extract only for skos:Concept
-            EntitySearcher.getInstances(ontologyModel.getOWLOntologyManager().getOWLDataFactory().getOWLClass(Constants.SKOS_CONCEPT), ontologyModel).forEach(a-> {
-                this.terms.add(a.toStringID());
-                OWLAnnotationProperty skosLabel = ontologyModel.getOWLOntologyManager().getOWLDataFactory().getOWLAnnotationProperty(Constants.PROP_SKOS_PREF_LABEL);
-                EntitySearcher.getAnnotations((OWLEntity) a, this.getOntologyModel(), skosLabel).forEach(ann -> {
-                    OWLAnnotationValue val = ann.getValue();
-                    if(val instanceof OWLLiteral) {
-                        if(!termsWithLabel.contains(a.toStringID())) {
-                            this.termsWithLabel.add(a.toStringID());
-                        }
-                    }
-                });
-                OWLAnnotationProperty skosDescription = ontologyModel.getOWLOntologyManager().getOWLDataFactory().getOWLAnnotationProperty(Constants.PROP_SKOS_PREF_DEFINITION);
-                EntitySearcher.getAnnotations((OWLEntity) a, this.getOntologyModel(), skosDescription).forEach(ann -> {
-                    OWLAnnotationValue val = ann.getValue();
-                    if(val instanceof OWLLiteral) {
-                        if(!termsWithDescription.contains(a.toStringID())) {
-                            this.termsWithDescription.add(a.toStringID());
-                        }
-                    }
-                });
-            });
+            for (String concept : this.vocabulary.getTerms()) {
+                this.terms.add(concept);
+                if (this.vocabulary.hasLabel(concept)) {
+                    this.termsWithLabel.add(concept);
+                }
+                if (this.vocabulary.hasDescription(concept)) {
+                    this.termsWithDescription.add(concept);
+                }
+            }
         }else{
-            try {
-                this.ontologyModel.classesInSignature().forEach(this::checkTermCoverage);
-            } catch (Exception e) {
-                logger.error("Error checking classes coverage"); 
-            }
-                
-            try {
-                this.ontologyModel.objectPropertiesInSignature().forEach(this::checkTermCoverage);
-            } catch (Exception e) { 
-                logger.error("Error checking object properties coverage"); 
-            }
-            
-            try {
-                this.ontologyModel.dataPropertiesInSignature().forEach(this::checkTermCoverage);
-            } catch (Exception e) { 
-                logger.error("Error checking data properties coverage"); 
-            }
+            // classes, then object properties, then datatype properties
+            this.vocabulary.getTerms().forEach(this::checkTermCoverage);
         }
     }
 
@@ -527,11 +465,11 @@ public class Ontology {
 
     /**
      * This method checks whether the ontology is reusing a vocabulary or not
-     * @param a named object to analyze.
+     * @param termIRI class or property to analyze.
      */
-    private void checkTermCoverage(OWLNamedObject a){
+    private void checkTermCoverage(String termIRI){
         try {
-            String termNS = a.getIRI().getNamespace();
+            String termNS = IRI.create(termIRI).getNamespace();
             if(termNS.equals(Constants.NS_OWL)) return; //We ignore OWL reuse.
             // if the URI is not the same as the main ontology provided, we count reuse.
             // we verify as well if the preferred ns prefix is used
@@ -543,67 +481,26 @@ public class Ontology {
             }else{
                 //get label/def coverage for the ontology URI considered
                 // for labels: rdfs:label, skos:prefLabel, obo:IAO_0000118
-                String termIRI = a.getIRI().getIRIString();
-                if(!this.terms.contains(termIRI)) { // to avoid duplicates
-                    this.terms.add(termIRI);
-                }
-                OWLAnnotationProperty label = ontologyModel.getOWLOntologyManager().getOWLDataFactory().getRDFSLabel();
-                EntitySearcher.getAnnotations((OWLEntity) a, this.getOntologyModel(), label).forEach(ann -> {
-                    OWLAnnotationValue val = ann.getValue();
-                    if(val instanceof OWLLiteral) {
-                        if(!termsWithLabel.contains(termIRI)) {
-                            this.termsWithLabel.add(termIRI);
-                        }
-                    }
-                });
-                OWLAnnotationProperty skosLabel = ontologyModel.getOWLOntologyManager().getOWLDataFactory().getOWLAnnotationProperty(Constants.PROP_SKOS_PREF_LABEL);
-                EntitySearcher.getAnnotations((OWLEntity) a, this.getOntologyModel(), skosLabel).forEach(ann -> {
-                    OWLAnnotationValue val = ann.getValue();
-                    if(val instanceof OWLLiteral) {
-                        if(!termsWithLabel.contains(termIRI)) {
-                            this.termsWithLabel.add(termIRI);
-                            }
-                    }
-                });
-                OWLAnnotationProperty oboLabel = ontologyModel.getOWLOntologyManager().getOWLDataFactory().getOWLAnnotationProperty(Constants.PROP_OBO_ALT_LABEL);
-                EntitySearcher.getAnnotations((OWLEntity) a, this.getOntologyModel(), oboLabel).forEach(ann -> {
-                    OWLAnnotationValue val = ann.getValue();
-                    if(val instanceof OWLLiteral) {
-                        if(!termsWithLabel.contains(termIRI)) {
-                            this.termsWithLabel.add(termIRI);
-                        }
-                    }
-                });
                 // descriptions: rdfs:comment, skos:definition
-                OWLAnnotationProperty description = ontologyModel.getOWLOntologyManager().getOWLDataFactory().
-                        getRDFSComment();
-                EntitySearcher.getAnnotations((OWLEntity) a, this.getOntologyModel(), description).forEach(ann -> {
-                    OWLAnnotationValue val = ann.getValue();
-                    if (val instanceof OWLLiteral) {
-                        if(!termsWithDescription.contains(termIRI)) {
-                            this.termsWithDescription.add(termIRI);
-                        }
-                    }
-                });
-
-                OWLAnnotationProperty skosDescription = ontologyModel.getOWLOntologyManager().getOWLDataFactory().getOWLAnnotationProperty(Constants.PROP_SKOS_PREF_DEFINITION);
-                EntitySearcher.getAnnotations((OWLEntity) a, this.getOntologyModel(), skosDescription).forEach(ann -> {
-                    OWLAnnotationValue val = ann.getValue();
-                    if(val instanceof OWLLiteral) {
-                        if(!termsWithDescription.contains(termIRI)) {
-                            this.termsWithDescription.add(termIRI);
-                        }
-                    }
-                });
+                this.terms.add(termIRI);
+                if (this.vocabulary.hasLabel(termIRI)) {
+                    this.termsWithLabel.add(termIRI);
+                }
+                if (this.vocabulary.hasDescription(termIRI)) {
+                    this.termsWithDescription.add(termIRI);
+                }
             }
         } catch (Exception e) {
-            logger.debug("Skipping term coverage for: " + a.getIRI().getIRIString() + " due to error: " + e.getMessage());
+            logger.debug("Skipping term coverage for: " + termIRI + " due to error: " + e.getMessage());
         }
        
     }
 
-    public OWLOntology getOntologyModel() {
-        return ontologyModel;
+    /**
+     * @return true if the vocabulary could be read as RDF
+     */
+    public boolean isParsed() {
+        return vocabulary != null;
     }
 
     public String getOntologyURI() {
@@ -658,15 +555,15 @@ public class Ontology {
         return reusedVocabularies;
     }
 
-    public ArrayList<String> getTermsWithLabel() {
+    public Set<String> getTermsWithLabel() {
         return termsWithLabel;
     }
 
-    public ArrayList<String> getTermsWithDescription() {
+    public Set<String> getTermsWithDescription() {
         return termsWithDescription;
     }
 
-    public ArrayList<String> getTerms() {
+    public Set<String> getTerms() {
         return terms;
     }
 
@@ -736,12 +633,12 @@ public class Ontology {
     }
 
     /**
-     * Method that will download the ontology to process with FOOPS!
-     * Note: lazy loading of imports is implemented (making them fail).
+     * Method that will download the ontology and summarize it for FOOPS!
+     * Note: imports are not loaded, only recorded.
      *
      * @param isFromFile boolean to indicate whether the ontology is from file or from URI.
      */
-    private void loadModelToDocument(String pathOrURI,boolean isFromFile, String downloadFolder) throws Exception {
+    private VocabularySummary loadVocabulary(String pathOrURI, boolean isFromFile, Path downloadFolder) throws Exception {
         String ontologyPath = pathOrURI;
         if (!isFromFile) {
             ontologyPath = downloadFolder + File.separator + "ontology";
@@ -749,56 +646,12 @@ public class Ontology {
         }
         logger.info("Loading ontology ");
         File ontologyFile = new File(ontologyPath);
-        // if ontology is bigger than 50 MB, we do not process it
+        // if ontology is bigger than 2 GB, we do not process it
         if (ontologyFile.length() > Constants.MAX_ONTOLOGY_SIZE) {
-            throw new FileTooLargeException("File is larger than maximum allowed (50 MB): " );
+            throw new FileTooLargeException(Constants.FILE_TOO_LARGE);
         }
-        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
-
-        // --- BLOCK TO PREVENT IMPORTS IN OWLAPI 5.5.0 ---
-        manager.getIRIMappers().add(iri -> {
-            if (!iri.equals(IRI.create(pathOrURI))) {
-                logger.warn("Blocking import: " + iri);
-                //record the imported vocabulary for later purposes
-                this.importedVocabularies.add(iri);
-                return IRI.create("file:///dev/null");
-                // we make the import fail along with MissingImportHandlingStrategy.SILENT
-                // and follow redirects set to false
-            }
-            ////return IRI.create("urn:dummy:" + iri);
-            return null;
-        });
-
-        // -----------------------------------------------------
-
-        //this is for debugging purposes, to check that the imports are being blocked.
-        // but add helped information about the loading process
-        manager.addOntologyLoaderListener(new OWLOntologyLoaderListener() {
-            @Override
-            public void startedLoadingOntology(OWLOntologyLoaderListener.LoadingStartedEvent event) {
-                if (!event.getDocumentIRI().equals(IRI.create(pathOrURI))) {
-                    logger.debug("Skipping import: " + event.getDocumentIRI());
-                } else {
-                    logger.debug("Loading main ontology: " + event.getDocumentIRI());
-                }
-            }
-
-            @Override
-            public void finishedLoadingOntology(OWLOntologyLoaderListener.LoadingFinishedEvent event) {
-                logger.info("Finished loading: " + event.getDocumentIRI());
-            }
-        });
-
-
-        OWLOntologyLoaderConfiguration loadingConfig = new OWLOntologyLoaderConfiguration();
-        loadingConfig = loadingConfig.setMissingImportHandlingStrategy(MissingImportHandlingStrategy.SILENT);
-        loadingConfig = loadingConfig.setFollowRedirects(false);
-
-        logger.info("Parsing type: "+loadingConfig.isStrict());
-
-        this.ontologyModel = manager.loadOntologyFromOntologyDocument(
-                new StreamDocumentSource(new FileInputStream(ontologyFile), IRI.create(pathOrURI)),
-                loadingConfig
-        );
+        VocabularySummary summary = VocabularyScanner.scan(Paths.get(ontologyPath), pathOrURI, downloadFolder);
+        summary.getImports().forEach(i -> this.importedVocabularies.add(IRI.create(i)));
+        return summary;
     }
 }

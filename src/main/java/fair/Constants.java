@@ -28,8 +28,20 @@ import java.util.Properties;
 
 public class Constants {
 
-    // If files are bigger than 50 MB we throw an exception
-    public static final long MAX_ONTOLOGY_SIZE = 50L * 1024 * 1024;
+    // If files are bigger than 2 GB we throw an exception. RDF is streamed, so memory stays low up to that size
+    public static final long MAX_ONTOLOGY_SIZE = 2L * 1024 * 1024 * 1024;
+    public static final String FILE_TOO_LARGE = "File is larger than maximum allowed (2 GB)";
+
+    // OWLAPI loads the whole vocabulary in memory: syntaxes only it reads are capped at 50 MB
+    public static final long MAX_OWLAPI_ONTOLOGY_SIZE = 50L * 1024 * 1024;
+    public static final String FILE_TOO_LARGE_FOR_OWLAPI =
+            "File is larger than maximum allowed for OWL/XML, Manchester, Functional and OBO (50 MB)";
+
+    // size limits as shown to API users
+    public static final String SIZE_LIMITS = "max 2 GB, 50 MB for OWL/XML, Manchester, Functional and OBO";
+
+    // Terms listed in affected_elements are capped so the output does not grow with the vocabulary
+    public static final int MAX_AFFECTED_ELEMENTS = 100;
 
     public static final String CN1_URL = "https://w3id.org/foops/test/CN1";
 
@@ -337,8 +349,11 @@ public class Constants {
             + "        This option is incompatible with -ontFile\n" ;
 
     // registries
-    public static final String LOV_ALL_VOCABS = "https://lov.linkeddata.es/dataset/lov/api/v2/vocabulary/list";
-    public static final String LOV_PREFIX_VOCAB = "https://lov.linkeddata.es/dataset/lov/api/v2/vocabulary/info?vocab=";
+    // former api
+//     public static final String LOV_ALL_VOCABS = "https://lov.linkeddata.es/dataset/lov/api/v2/vocabulary/list";
+//     public static final String LOV_PREFIX_VOCAB = "https://lov.linkeddata.es/dataset/lov/api/v2/vocabulary/info?vocab=";
+    public static final String LOV_ALL_VOCABS = "https://lov.linkeddata.es/dataset/api/v2/vocabulary/list";
+    public static final String LOV_PREFIX_VOCAB = "https://lov.linkeddata.es/dataset/api/v2/vocabulary/info?vocab=";
     public static final String PREFIX_CC = "http://prefix.cc/";
 
     //to do: ontobee (http://www.ontobee.org/sparql), bioportal,
@@ -392,6 +407,8 @@ public class Constants {
     public static final String SKOS_CONCEPT_SCHEME = NS_SKOS +  "ConceptScheme";
     public static final String PROP_SKOS_PREF_LABEL = NS_SKOS +  "prefLabel";
     public static final String PROP_SKOS_PREF_DEFINITION = NS_SKOS +  "definition";
+
+    public static final String PROP_SKOS_IN_SCHEME = NS_SKOS + "inScheme";
 
     public static final String PROP_OBO_ALT_LABEL = "http://purl.obolibrary.org/obo/IAO_0000118";
 
@@ -755,6 +772,22 @@ public class Constants {
 //                "  {\"@id\": \""+URI2_URL+"\", \"title\": \""+URI2_TITLE+"\", \"description\": \""+URI2_DESC+"\", \"endpointURL:\"" + FOOPS_TESTS_ENDPOINT + URI2 + "\", \"isDefinedBy: {\"@id:\"" + URI2_URL + "\"}, \"landingPage: {\"@id:\"" + FOOPS_DOC_BASE_URL + URI2 + "/" + URI2 + ".html\"}}\n" +
 //                "]";
         }
+
+    public static String JSON_LD_BENCHMARK_SCORE_TEMPLATE =
+        "{\n" + FTR_CONTEXT +
+        "    \"@id\": \"$SCORE_ID\",\n" +
+        "    \"@type\": \"https://w3id.org/ftr#BenchmarkScore\",\n" +
+        "    \"outputFromAlgorithm\": {\n" +
+        "        \"@id\": \"https://w3id.org/foops/algorithm/$BENCHMARK_ID\",\n" +
+        "        \"@type\": \"https://w3id.org/ftr#ScoringAlgorithm\",\n" +
+        "        \"title\": \"$BENCHMARK_TITLE\",\n" +
+        "        \"description\": \"$BENCHMARK_DESCRIPTION\"\n" +
+        "    },\n" +
+        "    \"value\": \"$SCORE_VALUE\",\n" +
+        "    \"log\": \"$SCORE_LOG\",\n" +
+        "    \"scoredTestResults\": $TEST_RESULT_SET_LIST \n" +
+        "}\n";
+
   
 }
 

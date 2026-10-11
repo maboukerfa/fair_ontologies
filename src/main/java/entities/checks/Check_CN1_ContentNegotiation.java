@@ -44,7 +44,7 @@ public class Check_CN1_ContentNegotiation extends Check {
             exp = "HTML, ";
             total_passed_tests += 1;
         }
-        if (this.ontology.getOntologyModel() != null){
+        if (this.ontology.isParsed()){
             exp += "RDF";
             total_passed_tests += 1;
         }

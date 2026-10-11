@@ -64,6 +64,9 @@ public class Check_VOC4_TermMetadataDescription extends Check {
                         ontology.getTerms().size() + " terms.";
                 affected_elements = new ArrayList<>();
                 for (String term:ontology.getTerms()){
+                    if (affected_elements.size() == Constants.MAX_AFFECTED_ELEMENTS) {
+                        break;
+                    }
                     if (!ontology.getTermsWithDescription().contains(term)){
                         affected_elements.add(term);
                     }

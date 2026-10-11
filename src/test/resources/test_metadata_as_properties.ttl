@@ -1,0 +1,13 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# Metadata properties declared as data/object properties (Widoco issue 530):
+# OWLAPI parses them as property assertions on the ontology IRI, not as ontology annotations.
+
+<https://w3id.org/example/props> rdf:type owl:Ontology ;
+    dcterms:title "Metadata as properties" ;
+    dcterms:creator <https://orcid.org/0000-0000-0000-0001> .
+
+dcterms:title rdf:type owl:DatatypeProperty .
+dcterms:creator rdf:type owl:ObjectProperty .

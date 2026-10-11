@@ -18,6 +18,7 @@
 
 package fair;
 
+import org.apache.commons.io.IOUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.semanticweb.owlapi.apibinding.OWLManager;
@@ -32,8 +33,8 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Optional;
 
@@ -62,20 +63,24 @@ public class Utils {
      *
      * @param uri the URI of the ontology
      * @param downloadPath path where the ontology will be saved locally.
+     * @throws FileTooLargeException if the ontology exceeds Constants.MAX_ONTOLOGY_SIZE
      */
-    public static void downloadOntology(String uri, String downloadPath) {
+    public static void downloadOntology(String uri, String downloadPath) throws FileTooLargeException {
 
         for (String serialization : Constants.POSSIBLE_VOCAB_SERIALIZATIONS) {
             logger.info("Attempting to download vocabulary in " + serialization);
             try {
                 HttpURLConnection connection = doNegotiation(uri,serialization);
-                InputStream in = (InputStream) connection.getInputStream();
-                Files.copy(in, Paths.get(downloadPath), StandardCopyOption.REPLACE_EXISTING);
-                in.close();
+                try (InputStream in = connection.getInputStream()) {
+                    copyCapped(in, Paths.get(downloadPath));
+                }
                 logger.info("Vocabulary in "+serialization+" downloaded successfully " +
                         "(not downloading other serializations)");
                 // break;
                 return;
+            } catch (FileTooLargeException e) {
+                // other serializations of the same vocabulary would be just as large
+                throw e;
             } catch (Exception e) {
                 final String message = "Failed to download vocabulary in RDF format [" + serialization +"]: ";
                 logger.error(message + e.toString());
@@ -84,6 +89,20 @@ public class Utils {
             }
         }
         throw new RuntimeException("Failed to download vocabulary in any RDF serialization: " + uri);
+    }
+
+    /**
+     * Copies a stream to a file, giving up once it exceeds Constants.MAX_ONTOLOGY_SIZE,
+     * so oversized vocabularies are rejected without being downloaded in full.
+     */
+    private static void copyCapped(InputStream in, Path target) throws IOException, FileTooLargeException {
+        try (OutputStream out = Files.newOutputStream(target)) {
+            // read one byte past the limit to tell "at the limit" from "over it"
+            long copied = IOUtils.copyLarge(in, out, 0, Constants.MAX_ONTOLOGY_SIZE + 1);
+            if (copied > Constants.MAX_ONTOLOGY_SIZE) {
+                throw new FileTooLargeException(Constants.FILE_TOO_LARGE);
+            }
+        }
     }
 
     public static String getValueAsLiteralOrURI(OWLAnnotationValue v) {

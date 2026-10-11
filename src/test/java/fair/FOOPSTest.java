@@ -2,6 +2,7 @@ package fair;
 
 import entities.checks.*;
 import org.junit.Test;
+import org.semanticweb.owlapi.model.IRI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.FOOPSController;
@@ -10,6 +11,7 @@ import server.FileTooLargeException;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -195,7 +197,7 @@ public class FOOPSTest {
             ClassLoader classLoader = getClass().getClassLoader();
             File is = new File(classLoader.getResource("test_onto_with_errors.ttl").getFile());
             FOOPS f = new FOOPS(is.toString(), true);
-            assertEquals(null,f.getOntology().getOntologyModel());
+            assertFalse(f.getOntology().isParsed());
             f.removeTemporaryFolders();
         } catch (Exception e) {
             logger.error("Could not load the resource file");
@@ -232,7 +234,7 @@ public class FOOPSTest {
             tempDir = Files.createTempDirectory("test");
             File testFile = tempDir.resolve("large_test_file.bin").toFile();
 
-            // Create a file slightly larger than 50 MB (51 MB)
+            // Create a file slightly larger than 50 MB (51 MB): not RDF, so only OWLAPI could read it
             try (FileOutputStream fos = new FileOutputStream(testFile)) {
                 byte[] buffer = new byte[1024 * 1024]; // 1 MB buffer
                 for (int i = 0; i < 51; i++) {
@@ -271,19 +273,10 @@ public class FOOPSTest {
             long end = System.currentTimeMillis();
 
             // Ontology must load successfully
-            assertNotNull(f.getOntology().getOntologyModel());
+            assertTrue(f.getOntology().isParsed());
 
-            // Only the main ontology should be loaded (imports blocked). We convert into dev/null
-            int loadedOntologies = f.getOntology().getOntologyModel()
-                    .getOWLOntologyManager()
-                    .getOntologies()
-                    .size();
-
-            assertEquals(
-                "Lazy loading failed: more than one ontology was loaded (imports were not blocked)",
-                1,
-                loadedOntologies
-            );
+            // Imports are recorded, not loaded
+            assertTrue(f.getOntology().getImportedVocabularies().contains(IRI.create("https://w3id.org/emmo")));
 
             assertTrue(
                 "Ontology loading took too long; imports may not be blocked",
@@ -409,6 +402,184 @@ public class FOOPSTest {
         } catch (Exception e) {
             logger.error("Could not load the resource file", e);
             fail();
+        }
+    }
+
+    /**
+     * This test verifies that the benchmark score endpoint returns a valid
+     * BenchmarkScore JSON-LD with the required fields (scoring algorithm feature)
+     */
+    @Test
+    public void testExportBenchmarkScore() {
+        try {
+            ClassLoader classLoader = getClass().getClassLoader();
+            File is = new File(classLoader.getResource("ontology_100.ttl").getFile());
+            FOOPS f = new FOOPS(is.toString(), true);
+            f.fairTest();
+            String result = f.exportBenchmarkScore("ALL");
+            assertNotNull(result);
+            assertTrue("Result must contain BenchmarkScore type", result.contains("ftr#BenchmarkScore"));
+            assertTrue("Result must contain outputFromAlgorithm", result.contains("outputFromAlgorithm"));
+            assertTrue("Result must contain algorithm ALL", result.contains("https://w3id.org/foops/algorithm/ALL"));
+            assertTrue("Result must contain value", result.contains("\"value\""));
+            assertTrue("Result must contain log", result.contains("\"log\""));
+            assertTrue("Result must contain scoredTestResults", result.contains("scoredTestResults"));
+            assertTrue("Result must contain TestResultSet", result.contains("ftr#TestResultSet"));
+            f.removeTemporaryFolders();
+        } catch (Exception e) {
+            logger.error("Could not load the resource file");
+            fail();
+        }
+    }
+
+    /**
+     * This test verifies that a concept scheme is inferred when none is declared.
+     */
+    @Test
+    public void testSKOSInferredScheme(){
+        try {
+            ClassLoader classLoader = getClass().getClassLoader();
+            File is = new File(classLoader.getResource("skos_inferred.ttl").getFile());
+            FOOPS f = new FOOPS(is.toString(), true);
+            assertTrue(f.getOntology().isSKOS());
+            assertEquals("http://vocab.example.org/my-scheme", f.getOntology().getOntologyURI());
+            f.removeTemporaryFolders();
+        } catch (Exception e) {
+            logger.error("Could not load the resource file");
+            fail();
+        }
+    }
+  
+    /**
+     * VOC1 must pass for a SKOS vocabulary whose metadata (dc) lives in the
+     * skos:ConceptScheme and that has no owl:Ontology node. Dani detected in issue 274
+     * with https://vocabs.ilc4clarin.ilc.cnr.it/vocabularies/echoes/
+     */
+    @Test
+    public void testVOC1SkosConceptSchemeMetadata(){
+        try {
+            ClassLoader classLoader = getClass().getClassLoader();
+            File is = new File(classLoader.getResource("skos_example.ttl").getFile());
+            FOOPS f = new FOOPS(is.toString(), true);
+            Check_VOC1_VocabReuseMetadata c = new Check_VOC1_VocabReuseMetadata(f.getOntology());
+            c.check();
+            assertEquals(Constants.OK, c.getStatus());
+            f.removeTemporaryFolders();
+        } catch (Exception e) {
+            logger.error("Could not load the resource file", e);
+            fail();
+        }
+    }
+
+    /**
+     * VOC1 must still fail for a SKOS vocabulary whose concept scheme does not
+     * use any whitelisted metadata vocabulary. Dani detected in issue 274
+     * with https://vocabs.ilc4clarin.ilc.cnr.it/vocabularies/echoes/.
+     */
+    @Test
+    public void testVOC1SkosWithoutReusedMetadata(){
+        try {
+            ClassLoader classLoader = getClass().getClassLoader();
+            File is = new File(classLoader.getResource("skos_no_metadata.ttl").getFile());
+            FOOPS f = new FOOPS(is.toString(), true);
+            Check_VOC1_VocabReuseMetadata c = new Check_VOC1_VocabReuseMetadata(f.getOntology());
+            c.check();
+            assertEquals(Constants.ERROR, c.getStatus());
+            f.removeTemporaryFolders();
+        } catch (Exception e) {
+            logger.error("Could not load the resource file", e);
+            fail();
+        }
+    }
+
+    /**
+     * Metadata declared through data/object property assertions on the ontology IRI
+     * (Widoco issue 530) must still be extracted.
+     */
+    @Test
+    public void testMetadataAsPropertyAssertions(){
+        try {
+            ClassLoader classLoader = getClass().getClassLoader();
+            File is = new File(classLoader.getResource("test_metadata_as_properties.ttl").getFile());
+            FOOPS f = new FOOPS(is.toString(), true);
+            assertEquals("Metadata as properties", f.getOntology().getTitle());
+            assertTrue(f.getOntology().getAuthors().contains("https://orcid.org/0000-0000-0000-0001"));
+            f.removeTemporaryFolders();
+        } catch (Exception e) {
+            logger.error("Could not load the resource file", e);
+            fail();
+        }
+    }
+
+    /**
+     * RDF is streamed, so files above the OWLAPI limit are assessed.
+     */
+    @Test
+    public void testLargeRdfIsAccepted(){
+        Path ttl = null;
+        try {
+            ttl = Files.createTempFile("large", ".ttl");
+            int termCount = 0;
+            try (PrintWriter out = new PrintWriter(Files.newBufferedWriter(ttl))) {
+                out.println("<https://w3id.org/example/large> a <http://www.w3.org/2002/07/owl#Ontology> .");
+                for (long written = 0; written <= Constants.MAX_OWLAPI_ONTOLOGY_SIZE; termCount++) {
+                    String line = "<https://w3id.org/example/large#C" + termCount + "> a <http://www.w3.org/2002/07/owl#Class> .";
+                    out.println(line);
+                    written += line.length() + 1;
+                }
+            }
+
+            FOOPS f = new FOOPS(ttl.toString(), true);
+            assertTrue(f.getOntology().isParsed());
+            assertEquals(termCount, f.getOntology().getTerms().size());
+            f.removeTemporaryFolders();
+        } catch (Exception e) {
+            logger.error("Could not assess the large vocabulary", e);
+            fail();
+        } finally {
+            if (ttl != null) {
+                ttl.toFile().delete();
+            }
+        }
+    }
+
+    /**
+     * VOC3/VOC4 list at most MAX_AFFECTED_ELEMENTS terms but still count all of them,
+     * so the JSON output does not grow with the vocabulary.
+     */
+    @Test
+    public void testAffectedElementsAreCapped(){
+        Path ttl = null;
+        try {
+            // vocabulary whose classes have neither labels nor descriptions
+            int termCount = Constants.MAX_AFFECTED_ELEMENTS + 50;
+            StringBuilder content = new StringBuilder(
+                    "@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" +
+                    "<https://w3id.org/example/big> a owl:Ontology .\n");
+            for (int i = 0; i < termCount; i++) {
+                content.append("<https://w3id.org/example/big#C").append(i).append("> a owl:Class .\n");
+            }
+            ttl = Files.createTempFile("unannotated", ".ttl");
+            Files.writeString(ttl, content);
+
+            FOOPS f = new FOOPS(ttl.toString(), true);
+            Check_VOC3_TermMetadataLabel voc3 = new Check_VOC3_TermMetadataLabel(f.getOntology());
+            voc3.check();
+            Check_VOC4_TermMetadataDescription voc4 = new Check_VOC4_TermMetadataDescription(f.getOntology());
+            voc4.check();
+            f.removeTemporaryFolders();
+
+            assertEquals(termCount, voc3.getTotal_tests_run());
+            assertEquals(Constants.MAX_AFFECTED_ELEMENTS, voc3.getAffected_Elements().size());
+            assertEquals(termCount, voc4.getTotal_tests_run());
+            assertEquals(Constants.MAX_AFFECTED_ELEMENTS, voc4.getAffected_Elements().size());
+        } catch (Exception e) {
+            logger.error("Could not generate the vocabulary", e);
+            fail();
+        } finally {
+            if (ttl != null) {
+                ttl.toFile().delete();
+            }
         }
     }
 
