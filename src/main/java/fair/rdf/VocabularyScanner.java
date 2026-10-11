@@ -18,6 +18,7 @@ package fair.rdf;
 
 import fair.Constants;
 import fair.rdf.VocabularySummary.SchemeOrigin;
+import server.FileTooLargeException;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
@@ -262,7 +263,7 @@ public final class VocabularyScanner {
      * @param tmpFolder where vocabularies only OWLAPI can read are converted to N-Triples
      */
     public static VocabularySummary scan(Path file, String documentIri, Path tmpFolder)
-            throws IOException, OWLOntologyCreationException, OWLOntologyStorageException {
+            throws IOException, OWLOntologyCreationException, OWLOntologyStorageException, FileTooLargeException {
         RdfSyntax syntax = RdfSyntax.detect(file);
         VocabularySummary summary = stream(file, documentIri, syntax);
 
@@ -274,7 +275,10 @@ public final class VocabularyScanner {
             return summary;
         }
 
-        // OWLAPI reads more syntaxes and tolerates more errors
+        // OWLAPI reads more syntaxes and tolerates more errors, but keeps everything in memory
+        if (Files.size(file) > Constants.MAX_OWLAPI_ONTOLOGY_SIZE) {
+            throw new FileTooLargeException(Constants.FILE_TOO_LARGE_FOR_OWLAPI);
+        }
         logger.info("Parsing vocabulary with OWLAPI");
         Path converted = tmpFolder.resolve(CONVERTED_FILE);
         VocabularyScanner scanner = new VocabularyScanner(documentIri);

@@ -28,9 +28,17 @@ import java.util.Properties;
 
 public class Constants {
 
-    // If files are bigger than 50 MB we throw an exception
-    public static final long MAX_ONTOLOGY_SIZE = 50L * 1024 * 1024;
-    public static final String FILE_TOO_LARGE = "File is larger than maximum allowed (50 MB)";
+    // If files are bigger than 2 GB we throw an exception. RDF is streamed, so memory stays low up to that size
+    public static final long MAX_ONTOLOGY_SIZE = 2L * 1024 * 1024 * 1024;
+    public static final String FILE_TOO_LARGE = "File is larger than maximum allowed (2 GB)";
+
+    // OWLAPI loads the whole vocabulary in memory: syntaxes only it reads are capped at 50 MB
+    public static final long MAX_OWLAPI_ONTOLOGY_SIZE = 50L * 1024 * 1024;
+    public static final String FILE_TOO_LARGE_FOR_OWLAPI =
+            "File is larger than maximum allowed for OWL/XML, Manchester, Functional and OBO (50 MB)";
+
+    // size limits as shown to API users
+    public static final String SIZE_LIMITS = "max 2 GB, 50 MB for OWL/XML, Manchester, Functional and OBO";
 
     // Terms listed in affected_elements are capped so the output does not grow with the vocabulary
     public static final int MAX_AFFECTED_ELEMENTS = 100;

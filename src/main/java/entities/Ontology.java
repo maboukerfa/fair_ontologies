@@ -646,7 +646,7 @@ public class Ontology {
         }
         logger.info("Loading ontology ");
         File ontologyFile = new File(ontologyPath);
-        // if ontology is bigger than 50 MB, we do not process it
+        // if ontology is bigger than 2 GB, we do not process it
         if (ontologyFile.length() > Constants.MAX_ONTOLOGY_SIZE) {
             throw new FileTooLargeException(Constants.FILE_TOO_LARGE);
         }

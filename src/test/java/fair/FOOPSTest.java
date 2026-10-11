@@ -11,6 +11,7 @@ import server.FileTooLargeException;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -233,7 +234,7 @@ public class FOOPSTest {
             tempDir = Files.createTempDirectory("test");
             File testFile = tempDir.resolve("large_test_file.bin").toFile();
 
-            // Create a file slightly larger than 50 MB (51 MB)
+            // Create a file slightly larger than 50 MB (51 MB): not RDF, so only OWLAPI could read it
             try (FileOutputStream fos = new FileOutputStream(testFile)) {
                 byte[] buffer = new byte[1024 * 1024]; // 1 MB buffer
                 for (int i = 0; i < 51; i++) {
@@ -507,6 +508,38 @@ public class FOOPSTest {
         } catch (Exception e) {
             logger.error("Could not load the resource file", e);
             fail();
+        }
+    }
+
+    /**
+     * RDF is streamed, so files above the OWLAPI limit are assessed.
+     */
+    @Test
+    public void testLargeRdfIsAccepted(){
+        Path ttl = null;
+        try {
+            ttl = Files.createTempFile("large", ".ttl");
+            int termCount = 0;
+            try (PrintWriter out = new PrintWriter(Files.newBufferedWriter(ttl))) {
+                out.println("<https://w3id.org/example/large> a <http://www.w3.org/2002/07/owl#Ontology> .");
+                for (long written = 0; written <= Constants.MAX_OWLAPI_ONTOLOGY_SIZE; termCount++) {
+                    String line = "<https://w3id.org/example/large#C" + termCount + "> a <http://www.w3.org/2002/07/owl#Class> .";
+                    out.println(line);
+                    written += line.length() + 1;
+                }
+            }
+
+            FOOPS f = new FOOPS(ttl.toString(), true);
+            assertTrue(f.getOntology().isParsed());
+            assertEquals(termCount, f.getOntology().getTerms().size());
+            f.removeTemporaryFolders();
+        } catch (Exception e) {
+            logger.error("Could not assess the large vocabulary", e);
+            fail();
+        } finally {
+            if (ttl != null) {
+                ttl.toFile().delete();
+            }
         }
     }
 

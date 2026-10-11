@@ -71,7 +71,7 @@ public class FOOPSController {
         + " \"ontologyUri\": \"https://w3id.org/example#\"\n"
         + "}\n" 
         + "```\n"
-        + "Note: Tests may fail if the ontology is too large (max 50MB)\n" 
+        + "Note: Tests may fail if the ontology is too large (" + Constants.SIZE_LIMITS + ")\n" 
         + "or if the URI is not valid or not resolvable."
 
         )
@@ -92,8 +92,8 @@ public class FOOPSController {
             }catch(FileTooLargeException el){
                 logger.error("Error "+ el.getMessage());
                 throw new ResponseStatusException(
-                        HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (max 50MB)",
-                        new Exception("File sent for assessment is too big (max 50MB)"));
+                        HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")",
+                        new Exception("File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")"));
             }
             catch(Exception e){
                 logger.error("Error "+ e.getMessage());
@@ -108,8 +108,8 @@ public class FOOPSController {
                     }catch(FileTooLargeException el){
                         logger.error("Error "+ el.getMessage());
                         throw new ResponseStatusException(
-                                HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (max 50MB)",
-                                new Exception("File sent for assessment is too big (max 50MB)"));
+                                HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")",
+                                new Exception("File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")"));
                     }catch(Exception e){
                         throw new ResponseStatusException(
                                 HttpStatus.BAD_REQUEST, "Could not load ontology", new Exception("Ontology URI or ontology content not provided"));
@@ -219,7 +219,7 @@ public class FOOPSController {
                     + " \"resource_identifier\": \"https://w3id.org/example#\"\n"
                     + "}\n"
                     + "```"
-                    + "Note: Tests may fail if the ontology is too large (max 50MB)."
+                    + "Note: Tests may fail if the ontology is too large (" + Constants.SIZE_LIMITS + ")."
     )
     @CrossOrigin(origins = "*")
     @PostMapping(path = "assess/test/{test_identifier}", consumes = "application/json", produces = "application/json")
@@ -243,8 +243,8 @@ public class FOOPSController {
             }catch(FileTooLargeException el){
                 logger.error("Error: ontology is too big! "+ el.getMessage());
                 throw new ResponseStatusException(
-                        HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (max 50MB)",
-                        new Exception("File sent for assessment is too big (max 50MB)"));
+                        HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")",
+                        new Exception("File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")"));
             }catch(Exception e){
                 logger.error("Error "+ e.getMessage());
                 throw new ResponseStatusException(
@@ -293,7 +293,7 @@ public class FOOPSController {
                     + " \"resource_identifier\": \"https://w3id.org/example#\"\n"
                     + "}\n"
                     + "```"
-                    + "Note: Tests may fail if the ontology is too large (max 50MB)."
+                    + "Note: Tests may fail if the ontology is too large (" + Constants.SIZE_LIMITS + ")."
     )
     @PostMapping(path = "assess/resultset/{identifier}",  consumes = "application/json", produces = "application/json")
     public String postResultSetAssessment(@PathVariable String identifier,
@@ -312,8 +312,8 @@ public class FOOPSController {
             }catch(FileTooLargeException el){
                 logger.error("Error: ontology too big! "+ el.getMessage());
                 throw new ResponseStatusException(
-                        HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (max 50MB)",
-                        new Exception("File sent for assessment is too big (max 50MB)"));
+                        HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")",
+                        new Exception("File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")"));
             }
             catch(Exception e){
                 logger.error("Error "+ e.getMessage());
@@ -395,7 +395,7 @@ public class FOOPSController {
             summary = "Assess an ontology against a set of FOOPS! tests for pre-assessment. This is the original FOOPS! call for assessment.",
             description = "This call returns a JSON response obtained by FOOPS. " +
                         "The ontology for assessment is in the body of the POST request.\n\n" +
-                        "Note: Tests may fail if the ontology is too large for complete analysis (max 50MB)."
+                        "Note: Tests may fail if the ontology is too large for complete analysis (" + Constants.SIZE_LIMITS + ")."
     )
     @CrossOrigin(origins = "*")
     @PostMapping(path = "/assessOntologyFile",consumes = "multipart/form-data", produces = "application/json")
@@ -419,8 +419,8 @@ public class FOOPSController {
             } catch(FileTooLargeException el){
                 logger.error("Error: ontology is too big! "+ el.getMessage());
                 throw new ResponseStatusException(
-                        HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (max 50MB)",
-                        new Exception("File sent for assessment is too big (max 50MB)"));
+                        HttpStatus.INTERNAL_SERVER_ERROR, "File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")",
+                        new Exception("File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")"));
             }catch (Exception e) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST, "Error while processing the file", e);
@@ -469,7 +469,7 @@ public class FOOPSController {
             return applyOstrailsStatusMapping(f.exportBenchmarkScore(identifier));
         } catch (FileTooLargeException el) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "File sent for assessment is too big (max 50MB)");
+                    "File sent for assessment is too big (" + Constants.SIZE_LIMITS + ")");
         } catch (Exception e) {
             logger.error("Error " + e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Malformed JSON request");
