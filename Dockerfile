@@ -21,6 +21,9 @@ WORKDIR /app
 # Run as an unprivileged user.
 RUN groupadd --system foops && useradd --system --gid foops foops
 
+# FOOPS! writes its temporary folders and uploaded files to the working directory.
+RUN chown foops:foops /app
+
 # Spring Boot repackages FOOPSServerApplication as the executable JAR.
 COPY --from=build /app/target/fair_ontologies-*.jar app.jar
 
