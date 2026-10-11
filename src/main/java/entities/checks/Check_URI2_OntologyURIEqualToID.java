@@ -54,7 +54,7 @@ public class Check_URI2_OntologyURIEqualToID extends Check {
             if (originalURI.endsWith("/") || originalURI.endsWith("#")) {
                 originalURI = originalURI.substring(0, originalURI.length() - 1);
             }
-            if(ontology.isSKOS() || ontology.getOntologyModel() != null) {
+            if(ontology.isSKOS() || ontology.isParsed()) {
                 if (originalOntology.equals(originalURI)) {
                     this.total_passed_tests++;
                     status = Constants.OK;

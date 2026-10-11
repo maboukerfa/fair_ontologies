@@ -2,6 +2,7 @@ package fair;
 
 import entities.checks.*;
 import org.junit.Test;
+import org.semanticweb.owlapi.model.IRI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.FOOPSController;
@@ -195,7 +196,7 @@ public class FOOPSTest {
             ClassLoader classLoader = getClass().getClassLoader();
             File is = new File(classLoader.getResource("test_onto_with_errors.ttl").getFile());
             FOOPS f = new FOOPS(is.toString(), true);
-            assertEquals(null,f.getOntology().getOntologyModel());
+            assertFalse(f.getOntology().isParsed());
             f.removeTemporaryFolders();
         } catch (Exception e) {
             logger.error("Could not load the resource file");
@@ -271,19 +272,10 @@ public class FOOPSTest {
             long end = System.currentTimeMillis();
 
             // Ontology must load successfully
-            assertNotNull(f.getOntology().getOntologyModel());
+            assertTrue(f.getOntology().isParsed());
 
-            // Only the main ontology should be loaded (imports blocked). We convert into dev/null
-            int loadedOntologies = f.getOntology().getOntologyModel()
-                    .getOWLOntologyManager()
-                    .getOntologies()
-                    .size();
-
-            assertEquals(
-                "Lazy loading failed: more than one ontology was loaded (imports were not blocked)",
-                1,
-                loadedOntologies
-            );
+            // Imports are recorded, not loaded
+            assertTrue(f.getOntology().getImportedVocabularies().contains(IRI.create("https://w3id.org/emmo")));
 
             assertTrue(
                 "Ontology loading took too long; imports may not be blocked",

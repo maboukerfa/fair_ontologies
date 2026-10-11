@@ -366,15 +366,6 @@ public class FOOPS {
 
     public void removeTemporaryFolders(){
         try {
-            // RELEASE MEMORY (RAM)
-            if (this.ontology != null && this.ontology.getOntologyModel() != null) {
-                OWLOntology model = this.ontology.getOntologyModel();
-                OWLOntologyManager manager = model.getOWLOntologyManager();
-
-                if (manager != null) {
-                    manager.removeOntology(model);
-                }
-            }
             // release disk space. Same old removeTemporaryFolders
             if (this.tmpFolder != null) {
                 FileUtils.deleteDirectory(new File(this.tmpFolder.toString()));
