@@ -32,6 +32,9 @@ public class Constants {
     public static final long MAX_ONTOLOGY_SIZE = 50L * 1024 * 1024;
     public static final String FILE_TOO_LARGE = "File is larger than maximum allowed (50 MB)";
 
+    // Terms listed in affected_elements are capped so the output does not grow with the vocabulary
+    public static final int MAX_AFFECTED_ELEMENTS = 100;
+
     public static final String CN1_URL = "https://w3id.org/foops/test/CN1";
 
     public static final String DOC1_URL = "https://w3id.org/foops/test/DOC1";

@@ -518,4 +518,44 @@ public class FOOPSTest {
         }
     }
 
+    /**
+     * VOC3/VOC4 list at most MAX_AFFECTED_ELEMENTS terms but still count all of them,
+     * so the JSON output does not grow with the vocabulary.
+     */
+    @Test
+    public void testAffectedElementsAreCapped(){
+        Path ttl = null;
+        try {
+            // vocabulary whose classes have neither labels nor descriptions
+            int termCount = Constants.MAX_AFFECTED_ELEMENTS + 50;
+            StringBuilder content = new StringBuilder(
+                    "@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" +
+                    "<https://w3id.org/example/big> a owl:Ontology .\n");
+            for (int i = 0; i < termCount; i++) {
+                content.append("<https://w3id.org/example/big#C").append(i).append("> a owl:Class .\n");
+            }
+            ttl = Files.createTempFile("unannotated", ".ttl");
+            Files.writeString(ttl, content);
+
+            FOOPS f = new FOOPS(ttl.toString(), true);
+            Check_VOC3_TermMetadataLabel voc3 = new Check_VOC3_TermMetadataLabel(f.getOntology());
+            voc3.check();
+            Check_VOC4_TermMetadataDescription voc4 = new Check_VOC4_TermMetadataDescription(f.getOntology());
+            voc4.check();
+            f.removeTemporaryFolders();
+
+            assertEquals(termCount, voc3.getTotal_tests_run());
+            assertEquals(Constants.MAX_AFFECTED_ELEMENTS, voc3.getAffected_Elements().size());
+            assertEquals(termCount, voc4.getTotal_tests_run());
+            assertEquals(Constants.MAX_AFFECTED_ELEMENTS, voc4.getAffected_Elements().size());
+        } catch (Exception e) {
+            logger.error("Could not generate the vocabulary", e);
+            fail();
+        } finally {
+            if (ttl != null) {
+                ttl.toFile().delete();
+            }
+        }
+    }
+
 }
