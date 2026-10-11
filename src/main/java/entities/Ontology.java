@@ -38,7 +38,9 @@ import java.util.stream.Collectors;
 import java.util.Optional;
 
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.stream.Stream;
 
 public class Ontology {
     private OWLOntology ontologyModel;
@@ -73,9 +75,10 @@ public class Ontology {
     private final ArrayList<String> reusedMetadataVocabularies;
     private final ArrayList<String> reusedVocabularies;
     List<IRI> importedVocabularies;
-    private final ArrayList<String> termsWithLabel;
-    private final ArrayList<String> terms; // all terms
-    private final ArrayList<String> termsWithDescription;
+    // sets: membership is checked once per term, which is quadratic on lists for large vocabularies
+    private final Set<String> termsWithLabel;
+    private final Set<String> terms; // all terms
+    private final Set<String> termsWithDescription;
     private boolean isSKOS = false;
 
     /**
@@ -89,9 +92,9 @@ public class Ontology {
         importedVocabularies = new ArrayList<>();
         reusedMetadataVocabularies = new ArrayList<>();
         reusedVocabularies = new ArrayList<>();
-        termsWithLabel = new ArrayList<>();
-        termsWithDescription = new ArrayList<>();
-        terms = new ArrayList<>();
+        termsWithLabel = new LinkedHashSet<>();
+        termsWithDescription = new LinkedHashSet<>();
+        terms = new LinkedHashSet<>();
         //Download ontology (any serialization)
         try {
             this.loadModelToDocument(o, isFromFile, tmpFolder.toString());
@@ -197,7 +200,13 @@ public class Ontology {
             // extension for those axioms that extend properties but are annotation properties.
             // see https://github.com/dgarijo/Widoco/issues/530 for context
             logger.info("Extracting axioms");
-            for (OWLAxiom axiom : ontologyModel.getAxioms()) {
+            // indexed lookup instead of getAxioms(), which copies every axiom of the ontology
+            OWLNamedIndividual ontologyIndividual = ontologyModel.getOWLOntologyManager().getOWLDataFactory()
+                    .getOWLNamedIndividual(IRI.create(this.ontologyURI));
+            Stream<OWLAxiom> ontologyAssertions = Stream.concat(
+                    ontologyModel.dataPropertyAssertionAxioms(ontologyIndividual),
+                    ontologyModel.objectPropertyAssertionAxioms(ontologyIndividual));
+            for (OWLAxiom axiom : (Iterable<OWLAxiom>) ontologyAssertions::iterator) {
                 String subject = "", predicate ="", object ="";
                 try {
                     if (axiom instanceof OWLDataPropertyAssertionAxiom) {
@@ -237,7 +246,11 @@ public class Ontology {
         Set<String> candidates = new HashSet<>();
         String inSchemeIri = Constants.PROP_SKOS_IN_SCHEME;
 
-        for (OWLAxiom axiom : ontologyModel.getAxioms()) {
+        // streamed by axiom type instead of getAxioms(), which copies every axiom of the ontology
+        Stream<OWLAxiom> assertions = Stream.concat(
+                ontologyModel.axioms(AxiomType.ANNOTATION_ASSERTION),
+                ontologyModel.axioms(AxiomType.OBJECT_PROPERTY_ASSERTION));
+        for (OWLAxiom axiom : (Iterable<OWLAxiom>) assertions::iterator) {
             if (axiom instanceof OWLAnnotationAssertionAxiom) {
                 OWLAnnotationAssertionAxiom aa = (OWLAnnotationAssertionAxiom) axiom;
                 if (aa.getProperty().getIRI().getIRIString().equals(inSchemeIri) && aa.getValue().isIRI()) {
@@ -252,11 +265,7 @@ public class Ontology {
         }
 
         // keep only candidates that are individuals in the vocabulary
-        Set<String> vocabularyIndividuals = new HashSet<>();
-        for (OWLNamedIndividual ind : ontologyModel.getIndividualsInSignature()) {
-            vocabularyIndividuals.add(ind.getIRI().toString());
-        }
-        candidates.retainAll(vocabularyIndividuals);
+        candidates.removeIf(c -> !ontologyModel.containsIndividualInSignature(IRI.create(c)));
 
         if (candidates.isEmpty()) {
             return null;
@@ -717,15 +726,15 @@ public class Ontology {
         return reusedVocabularies;
     }
 
-    public ArrayList<String> getTermsWithLabel() {
+    public Set<String> getTermsWithLabel() {
         return termsWithLabel;
     }
 
-    public ArrayList<String> getTermsWithDescription() {
+    public Set<String> getTermsWithDescription() {
         return termsWithDescription;
     }
 
-    public ArrayList<String> getTerms() {
+    public Set<String> getTerms() {
         return terms;
     }
 

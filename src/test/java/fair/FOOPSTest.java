@@ -499,4 +499,23 @@ public class FOOPSTest {
         }
     }
 
+    /**
+     * Metadata declared through data/object property assertions on the ontology IRI
+     * (Widoco issue 530) must still be extracted.
+     */
+    @Test
+    public void testMetadataAsPropertyAssertions(){
+        try {
+            ClassLoader classLoader = getClass().getClassLoader();
+            File is = new File(classLoader.getResource("test_metadata_as_properties.ttl").getFile());
+            FOOPS f = new FOOPS(is.toString(), true);
+            assertEquals("Metadata as properties", f.getOntology().getTitle());
+            assertTrue(f.getOntology().getAuthors().contains("https://orcid.org/0000-0000-0000-0001"));
+            f.removeTemporaryFolders();
+        } catch (Exception e) {
+            logger.error("Could not load the resource file", e);
+            fail();
+        }
+    }
+
 }
