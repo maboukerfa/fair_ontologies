@@ -30,6 +30,7 @@ public class Constants {
 
     // If files are bigger than 50 MB we throw an exception
     public static final long MAX_ONTOLOGY_SIZE = 50L * 1024 * 1024;
+    public static final String FILE_TOO_LARGE = "File is larger than maximum allowed (50 MB)";
 
     public static final String CN1_URL = "https://w3id.org/foops/test/CN1";
 
