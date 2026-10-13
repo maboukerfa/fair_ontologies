@@ -389,19 +389,23 @@ public class FOOPSController {
      *
      * @param file file sent as part of the FormData form.
      * @param otherData String other data sent.
+     * @param checkIri whether to also run the URI tests on the ontology IRI declared in the file.
      * @return JSON with FOOPS! response.
      */
     @Operation(
             summary = "Assess an ontology against a set of FOOPS! tests for pre-assessment. This is the original FOOPS! call for assessment.",
             description = "This call returns a JSON response obtained by FOOPS. " +
                         "The ontology for assessment is in the body of the POST request.\n\n" +
+                        "With checkIri=true, the URI tests (all but URI2) also run on the ontology IRI declared in the file.\n\n" +
                         "Note: Tests may fail if the ontology is too large for complete analysis (" + Constants.SIZE_LIMITS + ")."
     )
     @CrossOrigin(origins = "*")
     @PostMapping(path = "/assessOntologyFile",consumes = "multipart/form-data", produces = "application/json")
     public String assessPOST(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "otherData", required = false) String otherData) {
+            @RequestParam(value = "otherData", required = false) String otherData,
+            @Parameter(description = "Also run the URI tests on the ontology IRI declared in the file")
+            @RequestParam(value = "checkIri", defaultValue = "false") boolean checkIri) {
         FOOPS f = null;
         File tempFile = null;
         // logger.info("Received request!");
@@ -412,7 +416,8 @@ public class FOOPSController {
                 tempFile = File.createTempFile("uploaded_onto_", "_" + fileName);
                 logger.info("Received assessment request for file: " + file.getOriginalFilename() + " (size: " + file.getSize() + " bytes)");
                 file.transferTo(tempFile);
-                f = new FOOPS(tempFile.getAbsolutePath(), true);
+                FOOPS.IriChecks iriChecks = checkIri ? FOOPS.IriChecks.RUN : FOOPS.IriChecks.SKIP;
+                f = new FOOPS(tempFile.getAbsolutePath(), true, iriChecks);
                 f.fairTest();
                 // tempFile.delete();
                 return f.exportJSON();

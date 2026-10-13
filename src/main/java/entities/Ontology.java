@@ -39,6 +39,9 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 public class Ontology {
+    // name of the ontology downloaded from the IRI of a file, to check whether the IRI serves RDF
+    private static final String SERVED_ONTOLOGY = "served_ontology";
+
     private VocabularySummary vocabulary;
     private Document htmlDocumentation;
     private static final Logger logger = LoggerFactory.getLogger(Ontology.class);
@@ -76,6 +79,10 @@ public class Ontology {
     private final Set<String> terms; // all terms
     private final Set<String> termsWithDescription;
     private boolean isSKOS = false;
+    private final boolean isFromFile;
+    private final Path tmpFolder;
+    // whether the IRI serves RDF, null until checked
+    private Boolean rdfServed;
 
     /**
      * Ontology class constructor
@@ -84,6 +91,8 @@ public class Ontology {
      * @param tmpFolder temporary folder where to store the downloaded ontology
      */
     public Ontology(String o, boolean isFromFile, Path tmpFolder) throws FileTooLargeException {
+        this.isFromFile = isFromFile;
+        this.tmpFolder = tmpFolder;
         supportedMetadata = new ArrayList<>();
         importedVocabularies = new ArrayList<>();
         reusedMetadataVocabularies = new ArrayList<>();
@@ -503,6 +512,20 @@ public class Ontology {
         return vocabulary != null;
     }
 
+    /**
+     * @return true if the vocabulary can be read as RDF from its IRI.
+     * Files were read locally, so their IRI is downloaded and read on the first call.
+     */
+    public boolean servesRdf() {
+        if (!isFromFile) {
+            return isParsed();
+        }
+        if (rdfServed == null) {
+            rdfServed = readFromIri();
+        }
+        return rdfServed;
+    }
+
     public String getOntologyURI() {
         return ontologyURI;
     }
@@ -653,5 +676,20 @@ public class Ontology {
         VocabularySummary summary = VocabularyScanner.scan(Paths.get(ontologyPath), pathOrURI, downloadFolder);
         summary.getImports().forEach(i -> this.importedVocabularies.add(IRI.create(i)));
         return summary;
+    }
+
+    /**
+     * Downloads and reads the vocabulary at the ontology IRI, as an assessment by URI does.
+     */
+    private boolean readFromIri() {
+        String servedPath = tmpFolder + File.separator + SERVED_ONTOLOGY;
+        try {
+            Utils.downloadOntology(ontologyURI, servedPath);
+            VocabularyScanner.scan(Paths.get(servedPath), ontologyURI, tmpFolder);
+            return true;
+        } catch (Exception e) {
+            logger.error("Could not read the ontology from its IRI: " + e.getMessage());
+            return false;
+        }
     }
 }

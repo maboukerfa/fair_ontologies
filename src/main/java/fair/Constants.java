@@ -346,7 +346,9 @@ public class Constants {
             "to document.\n "
             + "        This option is incompatible with -ontURI\n" +
             "    -ontURI  URI   [required (unless -ontFile is used)]: Load an ontology to document from its URI.\n"
-            + "        This option is incompatible with -ontFile\n" ;
+            + "        This option is incompatible with -ontFile\n" +
+            "    -checkIri      [optional, with -ontFile]: Also run the URI tests on the ontology IRI declared in the file " +
+            "(all but URI2).\n" ;
 
     // registries
     // former api
@@ -551,6 +553,8 @@ public class Constants {
     public static final String BENCHMARK_ALL_DESCRIPTION = "Set of test results that includes all tests included in FOOPS! for FAIR assessment of ontologies.";
     public static final String BENCHMARK_PRE_NAME = "Pre-assessment benchmark for FAIR principles";
     public static final String BENCHMARK_PRE_DESCRIPTION = "Set of test results that includes tests for files and ontology code. No accessibility tests are performed, since this is meant for aiding researchers that have not made their ontologies available online yet. ";
+    public static final String BENCHMARK_FILE_IRI_NAME = "File and IRI benchmark for FAIR principles";
+    public static final String BENCHMARK_FILE_IRI_DESCRIPTION = "Set of test results that includes the pre-assessment tests on an ontology file and the accessibility and findability tests on the ontology IRI it declares.";
 
 
     // metadata (using local names to avoid problems)

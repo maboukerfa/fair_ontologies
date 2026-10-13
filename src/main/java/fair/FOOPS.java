@@ -23,6 +23,7 @@ import com.google.gson.GsonBuilder;
 import entities.Check;
 import entities.Ontology;
 import fair.Benchmarks.CustomBenchmark;
+import fair.Benchmarks.FileIriBenchmark;
 import fair.Benchmarks.URIBenchmark;
 import fair.Benchmarks.FileBenchmark;
 import org.apache.commons.io.FileUtils;
@@ -45,6 +46,11 @@ import java.util.List;
 
 public class FOOPS {
     private static final Logger logger = LoggerFactory.getLogger(FOOPS.class);
+
+    /**
+     * Whether a file is also assessed through the ontology IRI it declares.
+     */
+    public enum IriChecks { SKIP, RUN }
 
     private final Benchmark checksToRun;
     private Path tmpFolder;
@@ -69,11 +75,20 @@ public class FOOPS {
         }
     }
     public FOOPS(String o, boolean isFromFile)throws FileTooLargeException {
+        this(o, isFromFile, IriChecks.SKIP);
+    }
+
+    /**
+     * @param iriChecks for files, whether to also run the URI tests on the ontology IRI declared in the file
+     */
+    public FOOPS(String o, boolean isFromFile, IriChecks iriChecks) throws FileTooLargeException {
         try {
             initTempFolder();
             this.ontology = new Ontology(o, isFromFile, tmpFolder);
             if (!isFromFile) {
                 checksToRun = new URIBenchmark(ontology, o);
+            } else if (iriChecks == IriChecks.RUN) {
+                checksToRun = new FileIriBenchmark(ontology);
             } else {
                 checksToRun = new FileBenchmark(ontology);
             }
@@ -383,6 +398,7 @@ public class FOOPS {
         // get the arguments
         String ontology = "", outPath = "";
         boolean isFromFile = false;
+        IriChecks iriChecks = IriChecks.SKIP;
         int i = 0;
         while (i < args.length) {
             String s = args[i];
@@ -400,6 +416,9 @@ public class FOOPS {
                     outPath = args[i + 1];
                     i++;
                     break;
+                case "-checkIri":
+                    iriChecks = IriChecks.RUN;
+                    break;
             default:
                 logger.error("Command" + s + " not recognized.");
                 logger.info(Constants.HELP_TEXT);
@@ -413,7 +432,7 @@ public class FOOPS {
         }
         FOOPS f = null;
         try {
-            f = new FOOPS(ontology, isFromFile);
+            f = new FOOPS(ontology, isFromFile, iriChecks);
             f.fairTest();
             PrintWriter out = new PrintWriter(outPath);
             out.println(f.exportJSON());

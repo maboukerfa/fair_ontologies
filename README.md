@@ -116,6 +116,12 @@ You can also test one ontology from a file:
 java -jar target/fair_ontologies-x.y.z.jar -ontFile filePath
 ```
 
+If the ontology IRI declared in the file is already published, add `-checkIri` to also run the URI tests on it (all but URI2):
+
+```
+java -jar target/fair_ontologies-x.y.z.jar -ontFile filePath -checkIri
+```
+
 As a result, you should see a JSON in your folder (validation.json).
 
 
@@ -132,6 +138,8 @@ FOOPS! supports two result specifications, due to legacy development. The endpoi
 * [POST] /assessOntologyFile
 
 Follow the classic FOOPS! JSON format. To see an example, please see the [sample json file](./sample.json) in the code repository. This JSON is simple, but may be harder to debug.
+
+/assessOntologyFile takes an optional `checkIri=true` form field, the equivalent of `-checkIri`.
 
 The endpoints:
 * [GET] /benchmarks/{identifier}

@@ -1,6 +1,11 @@
 package fair;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.sun.net.httpserver.HttpServer;
 import entities.checks.*;
+import fair.FOOPS.IriChecks;
 import org.junit.Test;
 import org.semanticweb.owlapi.model.IRI;
 import org.slf4j.Logger;
@@ -11,9 +16,15 @@ import server.FileTooLargeException;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.Assert.*;
 
@@ -581,6 +592,135 @@ public class FOOPSTest {
                 ttl.toFile().delete();
             }
         }
+    }
+
+    // pre-assessment benchmark, and the same plus the URI tests except URI2
+    private static final int FILE_CHECKS = 15;
+    private static final int FILE_IRI_CHECKS = 23;
+
+    private static final String ONTOLOGY_PATH = "/onto";
+    private static final String HTML_PAGE = "<!DOCTYPE html>\n<html><body>Ontology documentation</body></html>";
+
+    private enum Serves { RDF_AND_HTML, HTML_ONLY }
+
+    /**
+     * Files keep the pre-assessment benchmark unless IRI checks are asked for.
+     */
+    @Test
+    public void testFileChecksByDefault() throws Exception {
+        HttpServer server = startOntologyServer(Serves.RDF_AND_HTML);
+        Path ttl = writeOntology(iriOf(server));
+        FOOPS f = new FOOPS(ttl.toString(), true);
+        try {
+            f.fairTest();
+            assertEquals(FILE_CHECKS, checksOf(f).size());
+        } finally {
+            f.removeTemporaryFolders();
+            server.stop(0);
+            Files.delete(ttl);
+        }
+    }
+
+    /**
+     * IRI checks run the URI tests on the IRI declared in the file.
+     */
+    @Test
+    public void testIriChecksUseDeclaredIri() throws Exception {
+        HttpServer server = startOntologyServer(Serves.RDF_AND_HTML);
+        Path ttl = writeOntology(iriOf(server));
+        FOOPS f = new FOOPS(ttl.toString(), true, IriChecks.RUN);
+        try {
+            f.fairTest();
+            Map<String, JsonObject> checks = checksOf(f);
+
+            assertEquals(FILE_IRI_CHECKS, checks.size());
+            assertFalse(checks.containsKey(Constants.URI2));
+            assertEquals(1, passedTests(checks, Constants.URI1));
+            assertEquals(1, passedTests(checks, Constants.HTTP1));
+            assertEquals(1, passedTests(checks, Constants.DOC1));
+            assertEquals(2, passedTests(checks, Constants.CN1));
+        } finally {
+            f.removeTemporaryFolders();
+            server.stop(0);
+            Files.delete(ttl);
+        }
+    }
+
+    /**
+     * CN1 asks the IRI for RDF instead of trusting the file: an IRI serving only HTML gets no RDF point.
+     */
+    @Test
+    public void testIriChecksFetchRdf() throws Exception {
+        HttpServer server = startOntologyServer(Serves.HTML_ONLY);
+        Path ttl = writeOntology(iriOf(server));
+        FOOPS f = new FOOPS(ttl.toString(), true, IriChecks.RUN);
+        try {
+            f.fairTest();
+            Map<String, JsonObject> checks = checksOf(f);
+
+            assertTrue(f.getOntology().isParsed());
+            assertEquals(1, passedTests(checks, Constants.RDF1));
+            assertEquals(1, passedTests(checks, Constants.CN1));
+        } finally {
+            f.removeTemporaryFolders();
+            server.stop(0);
+            Files.delete(ttl);
+        }
+    }
+
+    /**
+     * Serves the ontology at ONTOLOGY_PATH, as RDF or HTML depending on the Accept header.
+     * HTML_ONLY refuses RDF: an HTML page sent instead would be read as an empty ontology, as by URI.
+     */
+    private static HttpServer startOntologyServer(Serves serves) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext("/", exchange -> {
+            boolean isHtml = Constants.TEXT_HTML.equals(exchange.getRequestHeaders().getFirst("Accept"));
+            if (!isHtml && serves == Serves.HTML_ONLY) {
+                exchange.sendResponseHeaders(HttpURLConnection.HTTP_NOT_ACCEPTABLE, -1);
+                exchange.close();
+                return;
+            }
+
+            String iri = "http://localhost:" + exchange.getLocalAddress().getPort() + ONTOLOGY_PATH;
+            byte[] body = (isHtml ? HTML_PAGE : ontologyTurtle(iri)).getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(HttpURLConnection.HTTP_OK, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        return server;
+    }
+
+    private static String iriOf(HttpServer server) {
+        return "http://localhost:" + server.getAddress().getPort() + ONTOLOGY_PATH;
+    }
+
+    private static String ontologyTurtle(String iri) {
+        return "<" + iri + "> a <http://www.w3.org/2002/07/owl#Ontology> .\n";
+    }
+
+    private static Path writeOntology(String iri) throws IOException {
+        Path ttl = Files.createTempFile("declared_iri", ".ttl");
+        Files.writeString(ttl, ontologyTurtle(iri));
+        return ttl;
+    }
+
+    /**
+     * @return checks of the JSON output, by abbreviation
+     */
+    private static Map<String, JsonObject> checksOf(FOOPS f) {
+        Map<String, JsonObject> checks = new HashMap<>();
+        for (JsonElement check : JsonParser.parseString(f.exportJSON()).getAsJsonObject().getAsJsonArray("checks")) {
+            JsonObject object = check.getAsJsonObject();
+            checks.put(object.get("abbreviation").getAsString(), object);
+        }
+        return checks;
+    }
+
+    private static int passedTests(Map<String, JsonObject> checks, String abbreviation) {
+        return checks.get(abbreviation).get("total_passed_tests").getAsInt();
     }
 
 }
